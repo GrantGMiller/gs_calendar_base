@@ -84,10 +84,10 @@ class _CalendarItem:
             print('dt <= self._endDT is', dt <= self._endDT)
 
             if self._startDT <= dt <= self._endDT:
-                print('return True')
+                print('87return True')
                 return True
             else:
-                print('return False')
+                print('90return False')
                 return False
 
         elif isinstance(dt, datetime.date):
