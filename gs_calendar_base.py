@@ -122,6 +122,19 @@ class _CalendarItem:
         for key in ['Start', 'End', 'Duration']:
             yield key, self.Get(key)
 
+    def dict(self):
+        ret = {}
+        for k, v in self._data.items():
+            ret[k] = v
+
+        for key in ['Duration']:
+            ret[key] = self.Get(key)
+
+        for key in ['Start', 'End']:
+            ret[key] = self.Get(key).timestamp()
+
+        return ret
+
     def __str__(self):
         return '<CalendarItem object: Start={}, End={}, Duration={}, Subject={}, HasAttachements={}, OrganizerName={}, ItemId[:10]={}, RoomName={}, LocationId={}>'.format(
             self.Get('Start'),
@@ -290,7 +303,7 @@ class _BaseCalendar:
         :param endDT: only search for events before this date
         :return:
         '''
-        pass
+        raise NotImplementedError
 
     def CreateCalendarEvent(self, subject, body, startDT, endDT):
         '''
@@ -304,7 +317,7 @@ class _BaseCalendar:
         :param endDT:
         :return:
         '''
-        pass
+        raise NotImplementedError
 
     def ChangeEventTime(self, calItem, newStartDT, newEndDT):
         '''
@@ -317,6 +330,7 @@ class _BaseCalendar:
         :param newEndDT:
         :return:
         '''
+        raise NotImplementedError
 
     def DeleteEvent(self, calItem):
         '''
@@ -327,6 +341,7 @@ class _BaseCalendar:
         :param calItem:
         :return:
         '''
+        raise NotImplementedError
 
     # Dont override these below (unless you dare) #########################
 
@@ -369,6 +384,10 @@ class _BaseCalendar:
         return events
 
     def GetEventsInRange(self, startDT, endDT):
+        self.UpdateCalendar(
+            startDT=startDT,
+            endDT=endDT,
+        )
         ret = []
         for item in self._calendarItems:
             if startDT <= item <= endDT:
