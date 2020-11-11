@@ -136,7 +136,7 @@ class _CalendarItem:
         return ret
 
     def __str__(self):
-        return '<CalendarItem object: Start={}, End={}, Duration={}, Subject={}, HasAttachements={}, OrganizerName={}, ItemId[:10]={}, RoomName={}, LocationId={}>'.format(
+        return '<CalendarItem: Start={}, End={}, Duration={}, Subject={}, HasAttachements={}, OrganizerName={}, ItemId[:10]={}, RoomName={}, LocationId={}>'.format(
             self.Get('Start'),
             self.Get('End'),
             self.Get('Duration'),
