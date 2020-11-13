@@ -1,7 +1,7 @@
 import datetime
 import json
 import time
-from extronlib.system import File, Wait
+from extronlib.system import File, Wait, ProgramLog
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
 offsetHours = offsetSeconds / 60 / 60 * -1
@@ -242,7 +242,7 @@ class _BaseCalendar:
         self._calendarItems = []  # list of _CalendarItem object
 
         self._persitantStorage = k.get('persistentStorage', None)  # filepath or None
-        self._debug = k.get('debug', False)
+        # self._debug = k.get('debug', False)
 
         self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
         self._waitSaveToFile.Cancel()
@@ -298,7 +298,7 @@ class _BaseCalendar:
         self._Disconnected = func
 
     def _NewConnectionStatus(self, state):
-        self.print('378 _NewConnectionStatus(', state, ', self._connectionStatus=', self._connectionStatus)
+        # self.print('378 _NewConnectionStatus(', state, ', self._connectionStatus=', self._connectionStatus)
         if state != self._connectionStatus:
             # the connection status has changed
             self._connectionStatus = state
@@ -363,7 +363,7 @@ class _BaseCalendar:
     def GetCalendarItemsBySubject(self, exactMatch=None, partialMatch=None):
         ret = []
         for calItem in self._calendarItems:
-            self.print('426 searching for exactMatch={}, partialMatch={}'.format(exactMatch, partialMatch))
+            # self.print('426 searching for exactMatch={}, partialMatch={}'.format(exactMatch, partialMatch))
             if calItem.Get('Subject') == exactMatch:
                 calItem = self._UpdateItemFromServer(calItem)
                 ret.append(calItem)
@@ -376,7 +376,7 @@ class _BaseCalendar:
 
     def GetCalendarItemByID(self, itemId):
         for calItem in self._calendarItems:
-            self.print('424 searching for itemId={}, thisItemId={}'.format(itemId, calItem.Get('ItemId')))
+            # self.print('424 searching for itemId={}, thisItemId={}'.format(itemId, calItem.Get('ItemId')))
             if calItem.Get('ItemId') == itemId:
                 return calItem
 
@@ -446,6 +446,29 @@ class _BaseCalendar:
                     returnCalItems.append(calItem)
             return returnCalItems
 
+    def GetPreviousCalItems(self):
+        # return a list CalendarItems
+        # will not return events happening now. only the nearest future event(s)
+        # if multiple events start at the same time, all CalendarItems will be returned
+
+        nowDT = datetime.datetime.now()
+
+        previousEndDT = None
+        for calItem in self._calendarItems.copy():
+            thisEndDT = calItem.Get('End')
+            if thisEndDT > nowDT:  # its in the past
+                if previousEndDT is None or thisEndDT > previousEndDT:
+                    previousEndDT = thisEndDT
+
+        if previousEndDT is None:
+            return []  # no events in the future
+        else:
+            returnCalItems = []
+            for calItem in self._calendarItems.copy():
+                if previousEndDT == calItem.Get('End'):
+                    returnCalItems.append(calItem)
+            return returnCalItems
+
     def RegisterCalendarItems(self, calItems, startDT, endDT, doCallbacks=True):
         '''
 
@@ -497,46 +520,53 @@ class _BaseCalendar:
 
     def LoadCalendarItemsFromFile(self):
         if self._persitantStorage and File.Exists(self._persitantStorage):
-            calItems = []
+            try:
+                calItems = []
 
-            startDT = None
-            endDT = None
+                startDT = None
+                endDT = None
 
-            with File(self._persitantStorage, mode='rt') as file:
-                items = json.loads(file.read())
+                with File(self._persitantStorage, mode='rt') as file:
+                    items = json.loads(file.read())
 
-                for item in items:
-                    data = {}
-                    for k, v, in item.items():
-                        if k not in ['Start', 'End']:
-                            data[k] = v
+                    for item in items:
+                        data = {}
+                        for k, v, in item.items():
+                            if k not in ['Start', 'End']:
+                                data[k] = v
 
-                    thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
-                    thisEndDT = datetime.datetime.fromtimestamp(item['End'])
+                        thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
+                        thisEndDT = datetime.datetime.fromtimestamp(item['End'])
 
-                    if startDT is None or thisStartDT < startDT:
-                        startDT = thisStartDT
+                        if startDT is None or thisStartDT < startDT:
+                            startDT = thisStartDT
 
-                    if endDT is None or thisEndDT > endDT:
-                        endDT = thisEndDT
+                        if endDT is None or thisEndDT > endDT:
+                            endDT = thisEndDT
 
-                    calItem = _CalendarItem(
-                        startDT=thisStartDT,
-                        endDT=thisEndDT,
-                        data=data,
-                        parentCalendar=self,
-                    )
-                    calItems.append(calItem)
+                        calItem = _CalendarItem(
+                            startDT=thisStartDT,
+                            endDT=thisEndDT,
+                            data=data,
+                            parentCalendar=self,
+                        )
+                        calItems.append(calItem)
 
-            self.RegisterCalendarItems(
-                calItems,
-                startDT=startDT or datetime.datetime.now(),
-                endDT=endDT or datetime.datetime.now(),
-                doCallbacks=False,
-            )
+                self.RegisterCalendarItems(
+                    calItems,
+                    startDT=startDT or datetime.datetime.now(),
+                    endDT=endDT or datetime.datetime.now(),
+                    doCallbacks=False,
+                )
+            except Exception as e:
+                ProgramLog(
+                    'Error loading calendar items from disk: ' + str(e),
+                    'error'
+                )
 
 
 def ConvertDatetimeToTimeString(dt):
+    # converts to UTC time string
     dt = AdjustDatetimeForTimezone(dt, fromZone='Mine')
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -547,6 +577,8 @@ def ConvertTimeStringToDatetime(string):
     :param string:
     :return:
     '''
+    # converts from UTC time string to datetime with my timezone
+
     # dt = datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%SZ')
     year, month, etc = string.split('-')
     day, etc = etc.split('T')
