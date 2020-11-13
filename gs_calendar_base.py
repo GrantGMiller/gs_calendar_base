@@ -1,10 +1,7 @@
 import datetime
+import json
 import time
-
-DEBUG = False
-
-if DEBUG is False:
-    print = lambda *a, **k: None
+from extronlib.system import File, Wait
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
 offsetHours = offsetSeconds / 60 / 60 * -1
@@ -25,10 +22,15 @@ class _CalendarItem:
         '''
         if data is None:
             data = {}
-        print('_CalendarItem data=', data)
+        # print('_CalendarItem data=', data)
         self._data = data.copy()  # dict like {'ItemId': 'jasfsd', 'Subject': 'SuperMeeting', ...}
+
         self._startDT = startDT
         self._endDT = endDT
+
+        if 'Duration' not in self._data:
+            self._CalculateDuration()
+
         self._hasAttachments = data.get('HasAttachments', False)
         self._parentExchange = parentCalendar
 
@@ -68,10 +70,10 @@ class _CalendarItem:
         '''
         # Note: isinstance(datetime.datetime.now(), datetime.date.today()) == True
         # Because the point in time exist in that date
-        print('CalendarItem.__contains__(', dt)
-        print('self=', self)
-        print('self._startDT=', self._startDT)
-        print('self._endDT=', self._endDT)
+        # print('CalendarItem.__contains__(', dt)
+        # print('self=', self)
+        # print('self._startDT=', self._startDT)
+        # print('self._endDT=', self._endDT)
 
         if isinstance(dt, datetime.datetime):
             # if dt.tzinfo is None and self._startDT.tzinfo is not None:
@@ -80,14 +82,14 @@ class _CalendarItem:
             #     dt = dt.astimezone()
             #     print('dt converted to local tz', dt)
 
-            print('self.startDT <= dt is', self._startDT <= dt)
-            print('dt <= self._endDT is', dt <= self._endDT)
+            # print('self.startDT <= dt is', self._startDT <= dt)
+            # print('dt <= self._endDT is', dt <= self._endDT)
 
             if self._startDT <= dt <= self._endDT:
-                print('87return True')
+                # print('87return True')
                 return True
             else:
-                print('90return False')
+                # print('90return False')
                 return False
 
         elif isinstance(dt, datetime.date):
@@ -123,6 +125,7 @@ class _CalendarItem:
             yield key, self.Get(key)
 
     def dict(self):
+        # a json safe dict()
         ret = {}
         for k, v in self._data.items():
             ret[k] = v
@@ -152,14 +155,14 @@ class _CalendarItem:
         return str(self)
 
     def __eq__(self, other):
-        print('188 __eq__ self.Data=', self.Data, ',\nother.Data=', other.Data)
+        # print('188 __eq__ \nself.Data =', self.Data, ',\nother.Data=', other.Data)
         return self.Get('ItemId') == other.Get('ItemId') and \
-               self.Get('ChangeKey') == other.Get('ChangeKey')
+               self.Data == other.Data
 
     def __lt__(self, other):
-        print('214 __gt__', self, other)
-
-        print('192 __lt__', self, other)
+        # print('214 __gt__', self, other)
+        #
+        # print('192 __lt__', self, other)
         if isinstance(other, datetime.datetime):
             #     if other.tzinfo is None and self._startDT.tzinfo is not None:
             #         # other is naive, assume its in local system timezone
@@ -174,9 +177,9 @@ class _CalendarItem:
             raise TypeError('unorderable types: {} < {}'.format(self, other))
 
     def __le__(self, other):
-        print('214 __gt__', self, other)
-
-        print('203 __le__', self, other)
+        # print('214 __gt__', self, other)
+        #
+        # print('203 __le__', self, other)
         if isinstance(other, datetime.datetime):
             # if other.tzinfo is None and self._startDT.tzinfo is not None:
             #     # other is naive, assume its in local system timezone
@@ -191,7 +194,7 @@ class _CalendarItem:
             raise TypeError('unorderable types: {} < {}'.format(self, other))
 
     def __gt__(self, other):
-        print('214 __gt__', self, other)
+        # print('214 __gt__', self, other)
 
         if isinstance(other, datetime.datetime):
             # if other.tzinfo is None and self._endDT.tzinfo is not None:
@@ -206,7 +209,7 @@ class _CalendarItem:
             raise TypeError('unorderable types: {} < {}'.format(self, other))
 
     def __ge__(self, other):
-        print('223 __ge__', self, other)
+        # print('223 __ge__', self, other)
 
         if isinstance(other, datetime.datetime):
             # if other.tzinfo is None and self._endDT.tzinfo is not None:
@@ -227,7 +230,7 @@ class _BaseCalendar:
     Dont use this class directly, instead subclass it.
     '''
 
-    def __init__(self):
+    def __init__(self, *a, **k):
         self._connectionStatus = None
         self._Connected = None
         self._Disconnected = None
@@ -237,6 +240,18 @@ class _BaseCalendar:
         self._NewCalendarItem = None  # callback for when an item is created
 
         self._calendarItems = []  # list of _CalendarItem object
+
+        self._persitantStorage = k.get('persistentStorage', None)  # filepath or None
+        self._debug = k.get('debug', False)
+
+        self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
+        self._waitSaveToFile.Cancel()
+
+        self.LoadCalendarItemsFromFile()
+
+    def print(self, *a, **k):
+        if self._debug:
+            print(*a, **k)
 
     @property
     def NewCalendarItem(self):
@@ -283,7 +298,7 @@ class _BaseCalendar:
         self._Disconnected = func
 
     def _NewConnectionStatus(self, state):
-        print('378 _NewConnectionStatus(', state, ', self._connectionStatus=', self._connectionStatus)
+        self.print('378 _NewConnectionStatus(', state, ', self._connectionStatus=', self._connectionStatus)
         if state != self._connectionStatus:
             # the connection status has changed
             self._connectionStatus = state
@@ -348,7 +363,7 @@ class _BaseCalendar:
     def GetCalendarItemsBySubject(self, exactMatch=None, partialMatch=None):
         ret = []
         for calItem in self._calendarItems:
-            print('426 searching for exactMatch={}, partialMatch={}'.format(exactMatch, partialMatch))
+            self.print('426 searching for exactMatch={}, partialMatch={}'.format(exactMatch, partialMatch))
             if calItem.Get('Subject') == exactMatch:
                 calItem = self._UpdateItemFromServer(calItem)
                 ret.append(calItem)
@@ -361,7 +376,7 @@ class _BaseCalendar:
 
     def GetCalendarItemByID(self, itemId):
         for calItem in self._calendarItems:
-            print('424 searching for itemId={}, thisItemId={}'.format(itemId, calItem.Get('ItemId')))
+            self.print('424 searching for itemId={}, thisItemId={}'.format(itemId, calItem.Get('ItemId')))
             if calItem.Get('ItemId') == itemId:
                 return calItem
 
@@ -431,7 +446,7 @@ class _BaseCalendar:
                     returnCalItems.append(calItem)
             return returnCalItems
 
-    def RegisterCalendarItems(self, calItems, startDT, endDT):
+    def RegisterCalendarItems(self, calItems, startDT, endDT, doCallbacks=True):
         '''
 
         calItems should contain ALL the items between startDT and endDT
@@ -444,17 +459,21 @@ class _BaseCalendar:
         # Check for new and changed items
         for thisItem in calItems:
             itemInMemory = self.GetCalendarItemByID(thisItem.get('ItemId'))
+
             if itemInMemory is None:
                 # this is a new item
                 self._calendarItems.append(thisItem)
-                if callable(self._NewCalendarItem):
+                if callable(self._NewCalendarItem) and doCallbacks:
                     self._NewCalendarItem(self, thisItem)
 
             elif itemInMemory != thisItem:
+                # print('465')
+                # print('itemInMemory=', itemInMemory)
+                # print('thisItem    =', thisItem)
                 # this item exist in memory but has somehow changed
                 self._calendarItems.remove(itemInMemory)
                 self._calendarItems.append(thisItem)
-                if callable(self._CalendarItemChanged):
+                if callable(self._CalendarItemChanged) and doCallbacks:
                     self._CalendarItemChanged(self, thisItem)
 
         # check for deleted items
@@ -463,8 +482,58 @@ class _BaseCalendar:
                 if itemInMemory not in calItems:
                     # a event was deleted from the exchange server
                     self._calendarItems.remove(itemInMemory)
-                    if callable(self._CalendarItemDeleted):
+                    if callable(self._CalendarItemDeleted) and doCallbacks:
                         self._CalendarItemDeleted(self, itemInMemory)
+
+        self._waitSaveToFile.Restart()
+
+    def SaveCalendarItemsToFile(self):
+        if self._persitantStorage:
+            items = []
+            for item in self._calendarItems.copy():
+                items.append(item.dict())
+            with File(self._persitantStorage, mode='wt') as file:
+                file.write(json.dumps(items, indent=2, sort_keys=True))
+
+    def LoadCalendarItemsFromFile(self):
+        if self._persitantStorage and File.Exists(self._persitantStorage):
+            calItems = []
+
+            startDT = None
+            endDT = None
+
+            with File(self._persitantStorage, mode='rt') as file:
+                items = json.loads(file.read())
+
+                for item in items:
+                    data = {}
+                    for k, v, in item.items():
+                        if k not in ['Start', 'End']:
+                            data[k] = v
+
+                    thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
+                    thisEndDT = datetime.datetime.fromtimestamp(item['End'])
+
+                    if startDT is None or thisStartDT < startDT:
+                        startDT = thisStartDT
+
+                    if endDT is None or thisEndDT > endDT:
+                        endDT = thisEndDT
+
+                    calItem = _CalendarItem(
+                        startDT=thisStartDT,
+                        endDT=thisEndDT,
+                        data=data,
+                        parentCalendar=self,
+                    )
+                    calItems.append(calItem)
+
+            self.RegisterCalendarItems(
+                calItems,
+                startDT=startDT or datetime.datetime.now(),
+                endDT=endDT or datetime.datetime.now(),
+                doCallbacks=False,
+            )
 
 
 def ConvertDatetimeToTimeString(dt):
@@ -504,8 +573,8 @@ def AdjustDatetimeForTimezone(dt, fromZone):
 
     nowIsDST = time.localtime().tm_isdst > 0
 
-    print('nowIsDST=', nowIsDST)
-    print('dtIsDST=', dtIsDST)
+    # print('nowIsDST=', nowIsDST)
+    # print('dtIsDST=', dtIsDST)
 
     if fromZone == 'Mine':
         dt = dt + delta
