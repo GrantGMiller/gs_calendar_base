@@ -13,16 +13,18 @@ class _CalendarItem:
     An object to represent an event on the calendar
     '''
 
-    def __init__(self, startDT, endDT, data, parentCalendar):
+    def __init__(self, startDT, endDT, data, parentCalendar, debug=False):
         '''
         :param startDT:
         :param endDT:
         :param data: dict MUST contain keys 'ItemId', 'Subject', see __str__ method
         :param parentCalendar:
         '''
+        self.debug = debug
+
         if data is None:
             data = {}
-        # print('_CalendarItem data=', data)
+        self.print('_CalendarItem data=', data)
         self._data = data.copy()  # dict like {'ItemId': 'jasfsd', 'Subject': 'SuperMeeting', ...}
 
         self._startDT = startDT
@@ -33,6 +35,10 @@ class _CalendarItem:
 
         self._hasAttachments = data.get('HasAttachments', False)
         self._parentExchange = parentCalendar
+
+    def print(self, *a, **k):
+        if self.debug:
+            print(*a, **k)
 
     def AddData(self, key, value):
         self._data[key] = value
@@ -115,7 +121,13 @@ class _CalendarItem:
 
     @property
     def Data(self):
-        return self._data.copy()
+        ret = self._data.copy()
+        if self.Get('Start'):
+            ret['Start_ISO'] = self.Get('Start').isoformat()
+        if self.Get('End'):
+            ret['End_ISO'] = self.Get('End').isoformat()
+        self.print('Data=', ret)
+        return ret
 
     def __iter__(self):
         for k, v in self._data.items():
@@ -127,7 +139,7 @@ class _CalendarItem:
     def dict(self):
         # a json safe dict()
         ret = {}
-        for k, v in self._data.items():
+        for k, v in self.Data.items():
             ret[k] = v
 
         for key in ['Duration']:
@@ -490,10 +502,11 @@ class _BaseCalendar:
                     self._NewCalendarItem(self, thisItem)
 
             elif itemInMemory != thisItem:
-                # print('465')
-                # print('itemInMemory=', itemInMemory)
-                # print('thisItem    =', thisItem)
-                # this item exist in memory but has somehow changed
+                self.print('465')
+                self.print('itemInMemory=', itemInMemory)
+                self.print('thisItem    =', thisItem)
+                self.print('this item exist in memory but has somehow changed')
+
                 self._calendarItems.remove(itemInMemory)
                 self._calendarItems.append(thisItem)
                 if callable(self._CalendarItemChanged) and doCallbacks:
