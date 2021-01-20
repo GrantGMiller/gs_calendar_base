@@ -243,6 +243,9 @@ class _BaseCalendar:
     '''
 
     def __init__(self, *a, **k):
+
+        self._lastUpdateTime = 0
+
         self._connectionStatus = None
         self._Connected = None
         self._Disconnected = None
@@ -310,7 +313,10 @@ class _BaseCalendar:
         self._Disconnected = func
 
     def _NewConnectionStatus(self, state):
-        # self.print('378 _NewConnectionStatus(', state, ', self._connectionStatus=', self._connectionStatus)
+        if 'Connected' in state:
+            self._lastUpdateTime = time.time()
+            self._waitSaveToFile.Restart()
+
         if state != self._connectionStatus:
             # the connection status has changed
             self._connectionStatus = state
@@ -320,6 +326,10 @@ class _BaseCalendar:
             elif state == 'Disconnected':
                 if callable(self._Disconnected):
                     self._Disconnected(self, state)
+
+    @property
+    def LastUpdated(self):
+        return self._lastUpdateTime
 
     def UpdateCalendar(self, calendar=None, startDT=None, endDT=None):
         '''
@@ -331,6 +341,9 @@ class _BaseCalendar:
         :return:
         '''
         raise NotImplementedError
+
+    def UpToDate(self):
+        self._lastUpdateTime = time.time()
 
     def CreateCalendarEvent(self, subject, body, startDT, endDT):
         '''
@@ -525,11 +538,14 @@ class _BaseCalendar:
 
     def SaveCalendarItemsToFile(self):
         if self._persitantStorage:
-            items = []
+            data = {
+                'items': [],
+                'lastUpdateTime': self._lastUpdateTime
+            }
             for item in self._calendarItems.copy():
-                items.append(item.dict())
+                data['items'].append(item.dict())
             with File(self._persitantStorage, mode='wt') as file:
-                file.write(json.dumps(items, indent=2, sort_keys=True))
+                file.write(json.dumps(data, indent=2, sort_keys=True))
 
     def LoadCalendarItemsFromFile(self):
         if self._persitantStorage and File.Exists(self._persitantStorage):
@@ -540,9 +556,12 @@ class _BaseCalendar:
                 endDT = None
 
                 with File(self._persitantStorage, mode='rt') as file:
-                    items = json.loads(file.read())
+                    data = json.loads(file.read())
 
-                    for item in items:
+                    t = data.get('lastUpdateTime', 0)
+                    self._lastUpdateTime = t
+
+                    for item in data['items']:
                         data = {}
                         for k, v, in item.items():
                             if k not in ['Start', 'End']:
