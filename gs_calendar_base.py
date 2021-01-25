@@ -313,9 +313,10 @@ class _BaseCalendar:
         self._Disconnected = func
 
     def _NewConnectionStatus(self, state):
-        if 'Connected' in state:
-            self._lastUpdateTime = time.time()
-            self._waitSaveToFile.Restart()
+        self.print('_NewConnectionStatus(', state)
+
+        self._lastUpdateTime = time.time()
+        self._waitSaveToFile.Restart()
 
         if state != self._connectionStatus:
             # the connection status has changed
@@ -326,6 +327,10 @@ class _BaseCalendar:
             elif state == 'Disconnected':
                 if callable(self._Disconnected):
                     self._Disconnected(self, state)
+
+    @property
+    def ConnectionStatus(self):
+        return self._connectionStatus
 
     @property
     def LastUpdated(self):
@@ -544,6 +549,7 @@ class _BaseCalendar:
             }
             for item in self._calendarItems.copy():
                 data['items'].append(item.dict())
+
             with File(self._persitantStorage, mode='wt') as file:
                 file.write(json.dumps(data, indent=2, sort_keys=True))
 
