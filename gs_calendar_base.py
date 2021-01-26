@@ -602,6 +602,10 @@ class _BaseCalendar:
                     'error'
                 )
 
+    def __del__(self):
+        self._waitSaveToFile.Cancel()
+        self._waitSaveToFile.Function()
+
 
 def ConvertDatetimeToTimeString(dt):
     # converts to UTC time string
