@@ -486,15 +486,15 @@ class _BaseCalendar:
 
     def GetPreviousCalItems(self):
         # return a list CalendarItems
-        # will not return events happening now. only the nearest future event(s)
-        # if multiple events start at the same time, all CalendarItems will be returned
+        # will not return events happening now. only the nearest previous event(s)
+        # if multiple events end at the same time, all CalendarItems will be returned
 
         nowDT = datetime.datetime.now()
 
         previousEndDT = None
         for calItem in self._calendarItems.copy():
             thisEndDT = calItem.Get('End')
-            if thisEndDT > nowDT:  # its in the past
+            if thisEndDT < nowDT:  # its in the past
                 if previousEndDT is None or thisEndDT > previousEndDT:
                     previousEndDT = thisEndDT
 
