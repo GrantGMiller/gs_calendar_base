@@ -244,6 +244,12 @@ class _BaseCalendar:
 
     def __init__(self, *a, **k):
 
+        if 'debug' in k:
+            self._debug = k['debug']
+        else:
+            self._debug = False
+
+        ###########333
         self._lastUpdateTime = 0
 
         self._connectionStatus = None
@@ -256,13 +262,14 @@ class _BaseCalendar:
 
         self._calendarItems = []  # list of _CalendarItem object
 
-        self._persitantStorage = k.get('persistentStorage', None)  # filepath or None
+        self._persistentStorage = k.get('persistentStorage', None)  # filepath or None
         # self._debug = k.get('debug', False)
 
         self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
         self._waitSaveToFile.Cancel()
 
         self.LoadCalendarItemsFromFile()
+        self.print('_BaseCalendar.__init__(', a, k)
 
     def print(self, *a, **k):
         if self._debug:
@@ -316,6 +323,7 @@ class _BaseCalendar:
         self.print('_NewConnectionStatus(', state)
 
         self._lastUpdateTime = time.time()
+        self.print('lastUpdateTime=', self._lastUpdateTime)
         self._waitSaveToFile.Restart()
 
         if state != self._connectionStatus:
@@ -542,30 +550,33 @@ class _BaseCalendar:
         self._waitSaveToFile.Restart()
 
     def SaveCalendarItemsToFile(self):
-        if self._persitantStorage:
+        if self._persistentStorage:
             data = {
                 'items': [],
-                'lastUpdateTime': self._lastUpdateTime
+                'lastUpdateTime': self._lastUpdateTime,
+                'lastUpdateTime_ISO': datetime.datetime.fromtimestamp(self._lastUpdateTime).isoformat(),
             }
             for item in self._calendarItems.copy():
                 data['items'].append(item.dict())
 
-            with File(self._persitantStorage, mode='wt') as file:
+            with File(self._persistentStorage, mode='wt') as file:
                 file.write(json.dumps(data, indent=2, sort_keys=True))
 
     def LoadCalendarItemsFromFile(self):
-        if self._persitantStorage and File.Exists(self._persitantStorage):
+        self.print('LoadCalendarItemsFromFile()')
+        if self._persistentStorage and File.Exists(self._persistentStorage):
             try:
                 calItems = []
 
                 startDT = None
                 endDT = None
 
-                with File(self._persitantStorage, mode='rt') as file:
+                with File(self._persistentStorage, mode='rt') as file:
                     data = json.loads(file.read())
 
                     t = data.get('lastUpdateTime', 0)
                     self._lastUpdateTime = t
+                    self.print('LoadCalendarItemsFromFile LastUpdate=', self._lastUpdateTime)
 
                     for item in data['items']:
                         data = {}
@@ -597,14 +608,17 @@ class _BaseCalendar:
                     doCallbacks=False,
                 )
             except Exception as e:
-                ProgramLog(
-                    'Error loading calendar items from disk: ' + str(e),
-                    'error'
+                msg = 'Error 612: {} loading calendar items from disk: {}'.format(
+                    self,
+                    e,
                 )
+                ProgramLog(msg, 'error')
+                self.print(msg)
 
     def __del__(self):
-        self._waitSaveToFile.Cancel()
-        self._waitSaveToFile.Function()
+        if self._persistentStorage:
+            self._waitSaveToFile.Cancel()
+            self._waitSaveToFile.Function()
 
 
 def ConvertDatetimeToTimeString(dt):
