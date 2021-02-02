@@ -1,7 +1,7 @@
 import datetime
-import json
 import time
 from extronlib.system import File, Wait, ProgramLog
+from persistent_variables import PersistentVariables as PV
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
 offsetHours = offsetSeconds / 60 / 60 * -1
@@ -263,7 +263,9 @@ class _BaseCalendar:
         self._calendarItems = []  # list of _CalendarItem object
 
         self._persistentStorage = k.get('persistentStorage', None)  # filepath or None
-        # self._debug = k.get('debug', False)
+        self._pv = PV(self._persistentStorage) if self._persistentStorage else None
+
+        # init
 
         self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
         self._waitSaveToFile.Cancel()
@@ -559,8 +561,8 @@ class _BaseCalendar:
             for item in self._calendarItems.copy():
                 data['items'].append(item.dict())
 
-            with File(self._persistentStorage, mode='wt') as file:
-                file.write(json.dumps(data, indent=2, sort_keys=True))
+            for key, value in data.items():
+                self._pv.Set(key, value)
 
     def LoadCalendarItemsFromFile(self):
         self.print('LoadCalendarItemsFromFile()')
@@ -571,35 +573,34 @@ class _BaseCalendar:
                 startDT = None
                 endDT = None
 
-                with File(self._persistentStorage, mode='rt') as file:
-                    data = json.loads(file.read())
+                data = self._pv.Get()
 
-                    t = data.get('lastUpdateTime', 0)
-                    self._lastUpdateTime = t
-                    self.print('LoadCalendarItemsFromFile LastUpdate=', self._lastUpdateTime)
+                t = data.get('lastUpdateTime', 0)
+                self._lastUpdateTime = t
+                self.print('LoadCalendarItemsFromFile LastUpdate=', self._lastUpdateTime)
 
-                    for item in data['items']:
-                        data = {}
-                        for k, v, in item.items():
-                            if k not in ['Start', 'End']:
-                                data[k] = v
+                for item in data['items']:
+                    itemData = {}
+                    for k, v, in item.items():
+                        if k not in ['Start', 'End']:
+                            itemData[k] = v
 
-                        thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
-                        thisEndDT = datetime.datetime.fromtimestamp(item['End'])
+                    thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
+                    thisEndDT = datetime.datetime.fromtimestamp(item['End'])
 
-                        if startDT is None or thisStartDT < startDT:
-                            startDT = thisStartDT
+                    if startDT is None or thisStartDT < startDT: # used below in RegisterCalendarItems
+                        startDT = thisStartDT
 
-                        if endDT is None or thisEndDT > endDT:
-                            endDT = thisEndDT
+                    if endDT is None or thisEndDT > endDT:
+                        endDT = thisEndDT
 
-                        calItem = _CalendarItem(
-                            startDT=thisStartDT,
-                            endDT=thisEndDT,
-                            data=data,
-                            parentCalendar=self,
-                        )
-                        calItems.append(calItem)
+                    calItem = _CalendarItem(
+                        startDT=thisStartDT,
+                        endDT=thisEndDT,
+                        data=itemData,
+                        parentCalendar=self,
+                    )
+                    calItems.append(calItem)
 
                 self.RegisterCalendarItems(
                     calItems,
