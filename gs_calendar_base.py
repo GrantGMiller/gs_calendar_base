@@ -248,7 +248,6 @@ class _BaseCalendar:
             self._debug = k['debug']
         else:
             self._debug = False
-
         ###########333
         self._lastUpdateTime = 0
 
@@ -269,6 +268,7 @@ class _BaseCalendar:
 
         self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
         self._waitSaveToFile.Cancel()
+        self.print('_waitSaveToFile=', self._waitSaveToFile, self)
 
         self.LoadCalendarItemsFromFile()
         self.print('_BaseCalendar.__init__(', a, k)
@@ -552,6 +552,7 @@ class _BaseCalendar:
         self._waitSaveToFile.Restart()
 
     def SaveCalendarItemsToFile(self):
+        self.print('SaveCalendarItemsToFile')
         if self._persistentStorage:
             data = {
                 'items': [],
@@ -566,7 +567,7 @@ class _BaseCalendar:
 
     def LoadCalendarItemsFromFile(self):
         self.print('LoadCalendarItemsFromFile()')
-        if self._persistentStorage and File.Exists(self._persistentStorage):
+        if self._persistentStorage:
             try:
                 calItems = []
 
@@ -579,7 +580,7 @@ class _BaseCalendar:
                 self._lastUpdateTime = t
                 self.print('LoadCalendarItemsFromFile LastUpdate=', self._lastUpdateTime)
 
-                for item in data['items']:
+                for item in data.get('items', []):
                     itemData = {}
                     for k, v, in item.items():
                         if k not in ['Start', 'End']:
@@ -588,7 +589,7 @@ class _BaseCalendar:
                     thisStartDT = datetime.datetime.fromtimestamp(item['Start'])
                     thisEndDT = datetime.datetime.fromtimestamp(item['End'])
 
-                    if startDT is None or thisStartDT < startDT: # used below in RegisterCalendarItems
+                    if startDT is None or thisStartDT < startDT:  # used below in RegisterCalendarItems
                         startDT = thisStartDT
 
                     if endDT is None or thisEndDT > endDT:
@@ -602,24 +603,29 @@ class _BaseCalendar:
                     )
                     calItems.append(calItem)
 
-                self.RegisterCalendarItems(
-                    calItems,
-                    startDT=startDT or datetime.datetime.now(),
-                    endDT=endDT or datetime.datetime.now(),
-                    doCallbacks=False,
-                )
+                if calItems:
+                    self.RegisterCalendarItems(
+                        calItems,
+                        startDT=startDT or datetime.datetime.now(),
+                        endDT=endDT or datetime.datetime.now(),
+                        doCallbacks=False,
+                    )
             except Exception as e:
                 msg = 'Error 612: {} loading calendar items from disk: {}'.format(
                     self,
                     e,
                 )
                 ProgramLog(msg, 'error')
-                self.print(msg)
+                if self._debug:
+                    raise e
 
     def __del__(self):
         if self._persistentStorage:
-            self._waitSaveToFile.Cancel()
-            self._waitSaveToFile.Function()
+            try:
+                self._waitSaveToFile.Cancel()
+                self._waitSaveToFile.Function()
+            except Exception as e:
+                ProgramLog(str(e))
 
 
 def ConvertDatetimeToTimeString(dt):
