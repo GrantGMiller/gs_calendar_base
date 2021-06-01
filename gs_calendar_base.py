@@ -1,6 +1,11 @@
 import datetime
+from collections import defaultdict
 import time
-from extronlib.system import File, Wait, ProgramLog
+
+try:
+    from extronlib_pro import File, ProgramLog, Timer
+except:
+    from extronlib.system import File, ProgramLog, Timer
 from persistent_variables import PersistentVariables as PV
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
@@ -248,7 +253,6 @@ class _BaseCalendar:
             self._debug = k['debug']
         else:
             self._debug = False
-
         ###########
         self._lastUpdateTime = 0
 
@@ -260,16 +264,16 @@ class _BaseCalendar:
         self._CalendarItemChanged = None  # callback for when an item is changed
         self._NewCalendarItem = None  # callback for when an item is created
 
-        self._calendarItems = []  # list of _CalendarItem object
+        self._calendarItems = defaultdict(lambda: None)  # dict of _CalendarItem object {str(id): calItemObj}
 
         self._persistentStorage = k.get('persistentStorage', None)  # filepath or None
         self._pv = PV(self._persistentStorage) if self._persistentStorage else None
 
         # init
 
-        self._waitSaveToFile = Wait(1, self.SaveCalendarItemsToFile)
-        self._waitSaveToFile.Cancel()
-        self.print('_waitSaveToFile=', self._waitSaveToFile, self)
+        self._shouldSave = False
+        self._timerSaveToFile = Timer(10, self.SaveCalendarItemsToFile)
+        self._timerSaveToFile.Stop()
 
         self.LoadCalendarItemsFromFile()
         self.print('_BaseCalendar.__init__(', a, k)
@@ -327,7 +331,7 @@ class _BaseCalendar:
 
         self._lastUpdateTime = time.time()
         self.print('lastUpdateTime=', self._lastUpdateTime)
-        self._waitSaveToFile.Restart()
+        self._shouldSave = True
 
         if state != self._connectionStatus:
             # the connection status has changed
@@ -403,7 +407,7 @@ class _BaseCalendar:
 
     def GetCalendarItemsBySubject(self, exactMatch=None, partialMatch=None):
         ret = []
-        for calItem in self._calendarItems:
+        for calItem in self._calendarItems.values():
             # self.print('426 searching for exactMatch={}, partialMatch={}'.format(exactMatch, partialMatch))
             if calItem.Get('Subject') == exactMatch:
                 calItem = self._UpdateItemFromServer(calItem)
@@ -416,15 +420,27 @@ class _BaseCalendar:
         return ret
 
     def GetCalendarItemByID(self, itemId):
-        for calItem in self._calendarItems:
-            # self.print('424 searching for itemId={}, thisItemId={}'.format(itemId, calItem.Get('ItemId')))
-            if calItem.Get('ItemId') == itemId:
-                return calItem
+        '''
+
+        :param itemId: hashable
+        :return: CalendarItem obj or None
+        '''
+        ret = self._calendarItems[itemId]
+        return ret
 
     def GetAllEvents(self):
-        return self._calendarItems.copy()
+        '''
+
+        :return: iterable of CalendarItem objects
+        '''
+        return self._calendarItems.copy().values()
 
     def GetEventAtTime(self, dt=None):
+        '''
+
+        :param dt:
+        :return: list of CalendarItem objs, may be empty
+        '''
         # dt = datetime.date or datetime.datetime
         # return a list of events that occur on datetime.date or at datetime.datetime
 
@@ -433,19 +449,25 @@ class _BaseCalendar:
 
         events = []
 
-        for calItem in self._calendarItems.copy():
+        for calItem in self._calendarItems.copy().values():
             if dt in calItem:
                 events.append(calItem)
 
         return events
 
     def GetEventsInRange(self, startDT, endDT):
+        '''
+
+        :param startDT:
+        :param endDT:
+        :return: list of CalendarItem objects, maybe be empty
+        '''
         self.UpdateCalendar(
             startDT=startDT,
             endDT=endDT,
         )
         ret = []
-        for item in self._calendarItems:
+        for item in self._calendarItems.values():
             if startDT <= item <= endDT:
                 ret.append(item)
 
@@ -458,7 +480,7 @@ class _BaseCalendar:
 
         nowDT = datetime.datetime.now()
 
-        for calItem in self._calendarItems.copy():
+        for calItem in self._calendarItems.copy().values():
             if nowDT in calItem:
                 returnCalItems.append(calItem)
 
@@ -472,7 +494,7 @@ class _BaseCalendar:
         nowDT = datetime.datetime.now()
 
         nextStartDT = None
-        for calItem in self._calendarItems.copy():
+        for calItem in self._calendarItems.copy().values():
             startDT = calItem.Get('Start')
             if startDT > nowDT:  # its in the future
                 if nextStartDT is None or startDT < nextStartDT:  # its sooner than the previous soonest one. (Wha!?)
@@ -482,7 +504,7 @@ class _BaseCalendar:
             return []  # no events in the future
         else:
             returnCalItems = []
-            for calItem in self._calendarItems.copy():
+            for calItem in self._calendarItems.copy().values():
                 if nextStartDT == calItem.Get('Start'):
                     returnCalItems.append(calItem)
             return returnCalItems
@@ -495,7 +517,7 @@ class _BaseCalendar:
         nowDT = datetime.datetime.now()
 
         previousEndDT = None
-        for calItem in self._calendarItems.copy():
+        for calItem in self._calendarItems.copy().values():
             thisEndDT = calItem.Get('End')
             if thisEndDT < nowDT:  # its in the past
                 if previousEndDT is None or thisEndDT > previousEndDT:
@@ -505,7 +527,7 @@ class _BaseCalendar:
             return []  # no events in the future
         else:
             returnCalItems = []
-            for calItem in self._calendarItems.copy():
+            for calItem in self._calendarItems.copy().values():
                 if previousEndDT == calItem.Get('End'):
                     returnCalItems.append(calItem)
             return returnCalItems
@@ -515,7 +537,7 @@ class _BaseCalendar:
 
         calItems should contain ALL the items between startDT and endDT
 
-        :param calItems:
+        :param calItems: list
         :param startDT:
         :param endDT:
         :return:
@@ -526,7 +548,7 @@ class _BaseCalendar:
 
             if itemInMemory is None:
                 # this is a new item
-                self._calendarItems.append(thisItem)
+                self._calendarItems[thisItem.Get('ItemId')] = thisItem
                 if callable(self._NewCalendarItem) and doCallbacks:
                     self._NewCalendarItem(self, thisItem)
 
@@ -536,44 +558,37 @@ class _BaseCalendar:
                 self.print('thisItem    =', thisItem)
                 self.print('this item exist in memory but has somehow changed')
 
-                self._calendarItems.remove(itemInMemory)
-                self._calendarItems.append(thisItem)
+                self._calendarItems[thisItem.Get('ItemId')] = thisItem  # overwrite the current value
                 if callable(self._CalendarItemChanged) and doCallbacks:
                     self._CalendarItemChanged(self, thisItem)
 
         # check for deleted items
-        for itemInMemory in self._calendarItems.copy():
+        for itemInMemory in self._calendarItems.copy().values():
             if startDT <= itemInMemory <= endDT:
                 if itemInMemory not in calItems:
                     # a event was deleted from the exchange server
-                    self._calendarItems.remove(itemInMemory)
+                    self._calendarItems.pop(itemInMemory.Get('ItemId'), None)
                     if callable(self._CalendarItemDeleted) and doCallbacks:
                         self._CalendarItemDeleted(self, itemInMemory)
-
-        self._waitSaveToFile.Restart()
+        self.print('552 len(self._calendarItems)=', len(self._calendarItems))
+        self._shouldSave = True
 
     def SaveCalendarItemsToFile(self):
-        self.print('SaveCalendarItemsToFile')
-        if self._persistentStorage:
-            data = {
-                'items': [],
-                'lastUpdateTime': self._lastUpdateTime,
-                'lastUpdateTime_ISO': datetime.datetime.fromtimestamp(self._lastUpdateTime).isoformat(),
-            }
-            for item in self._calendarItems.copy():
-                data['items'].append(item.dict())
-
-            for key, value in data.items():
-                self._pv.Set(key, value)
+        self.print('SaveCalendarItemsToFile() self=', self)
+        if self._persistentStorage and self._shouldSave:
+            self._shouldSave = False
+            self._pv.Set('lastUpdateTime', self._lastUpdateTime)
+            self._pv.Set('lastUpdateTime_ISO', datetime.datetime.fromtimestamp(self._lastUpdateTime).isoformat())
+            items = []
+            for item in self._calendarItems.values():
+                if item:
+                    items.append(item.dict())
+            self._pv.Set('items', items)
 
     def LoadCalendarItemsFromFile(self):
-        self.print('LoadCalendarItemsFromFile()')
+        self.print('LoadCalendarItemsFromFile() self=', self)
         if self._persistentStorage:
             try:
-                calItems = []
-
-                startDT = None
-                endDT = None
 
                 data = self._pv.Get()
 
@@ -581,6 +596,9 @@ class _BaseCalendar:
                 self._lastUpdateTime = t
                 self.print('LoadCalendarItemsFromFile LastUpdate=', self._lastUpdateTime)
 
+                startDT = None
+                endDT = None
+                calItems = []
                 for item in data.get('items', []):
                     itemData = {}
                     for k, v, in item.items():
@@ -623,10 +641,10 @@ class _BaseCalendar:
     def __del__(self):
         if self._persistentStorage:
             try:
-                self._waitSaveToFile.Cancel()
-                self._waitSaveToFile.Function()
+                self._timerSaveToFile.Stop()
+                self._timerSaveToFile.Function()
             except Exception as e:
-                ProgramLog(str(e))
+                ProgramLog('Error 621: {}'.format(e))
 
 
 def ConvertDatetimeToTimeString(dt):
