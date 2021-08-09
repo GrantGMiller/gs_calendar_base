@@ -25,6 +25,8 @@ class _CalendarItem:
         :param data: dict MUST contain keys 'ItemId', 'Subject', see __str__ method
         :param parentCalendar:
         '''
+        assert 'ItemId' in data, 'data must have "ItemId". A unique string for this event.'
+
         self.debug = debug
 
         if data is None:
