@@ -13,7 +13,7 @@ offsetHours = offsetSeconds / 60 / 60 * -1
 MY_TIME_ZONE = offsetHours
 
 
-class _CalendarItem:
+class CalendarItem:
     '''
     An object to represent an event on the calendar
     '''
@@ -41,7 +41,7 @@ class _CalendarItem:
             self._CalculateDuration()
 
         self._hasAttachments = data.get('HasAttachments', False)
-        self._parentExchange = parentCalendar
+        self.parentCalendar = parentCalendar
 
     def print(self, *a, **k):
         if self.debug:
@@ -49,6 +49,8 @@ class _CalendarItem:
 
     def AddData(self, key, value):
         self._data[key] = value
+        if key in ['Start', 'End']:
+            self._CalculateDuration()
 
     def _CalculateDuration(self):
         # Returns float in seconds
@@ -121,7 +123,7 @@ class _CalendarItem:
 
     @property
     def Attachments(self):
-        return self._parentExchange.GetAttachments(self)
+        return self.parentCalendar.GetAttachments(self)
 
     def HasAttachments(self):
         return self._hasAttachments
@@ -165,7 +167,7 @@ class _CalendarItem:
             self.Get('Subject'),
             self.HasAttachments(),
             self.Get('OrganizerName'),
-            self.Get('ItemId')[:10] + '...',
+            self.Get('ItemId')[-15:] + '...',
             self.Get('RoomName'),
             self.Get('LocationId'),
         )
@@ -189,7 +191,7 @@ class _CalendarItem:
 
             return self._startDT < other
 
-        elif isinstance(other, _CalendarItem):
+        elif isinstance(other, CalendarItem):
             return self._startDT < other._startDT
 
         else:
@@ -206,7 +208,7 @@ class _CalendarItem:
 
             return self._startDT <= other
 
-        elif isinstance(other, _CalendarItem):
+        elif isinstance(other, CalendarItem):
             return self._startDT <= other._startDT
 
         else:
@@ -221,7 +223,7 @@ class _CalendarItem:
             # other = other.astimezone()
 
             return self._endDT > other
-        elif isinstance(other, _CalendarItem):
+        elif isinstance(other, CalendarItem):
             return self._endDT > other._endDT
 
         else:
@@ -236,7 +238,7 @@ class _CalendarItem:
             #     other = other.astimezone()
 
             return self._endDT >= other
-        elif isinstance(other, _CalendarItem):
+        elif isinstance(other, CalendarItem):
             return self._endDT >= other._endDT
 
         else:
@@ -616,7 +618,7 @@ class _BaseCalendar:
                     if endDT is None or thisEndDT > endDT:
                         endDT = thisEndDT
 
-                    calItem = _CalendarItem(
+                    calItem = CalendarItem(
                         startDT=thisStartDT,
                         endDT=thisEndDT,
                         data=itemData,
@@ -707,3 +709,15 @@ def AdjustDatetimeForTimezone(dt, fromZone):
             dt -= datetime.timedelta(hours=1)
 
     return dt
+
+
+class BaseBatchManager:
+    def UpdateCalendarBatch(self, calendars, startDT=None, endDT=None):
+        '''
+
+        :param calendars:
+        :param startDT:
+        :param endDT:
+        :return: list of CalendarItem() objects where obj.parentCalendar is a _BaseCalendar
+        '''
+        raise NotImplementedError
